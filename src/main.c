@@ -55,7 +55,7 @@ static void handle(Json *request, Json *tools) {
             if (requested && !strcmp(requested, supported[i])) protocol = requested;
         Json *result = json_object_new_object(), *caps = json_object_new_object(), *info = json_object_new_object();
         setstr(result, "protocolVersion", protocol);
-        setstr(info, "name", "newrelic-mcp-c"); setstr(info, "version", "0.1.0");
+        setstr(info, "name", "newrelic-mcp-c"); setstr(info, "version", "0.1.1");
         json_object_object_add(caps, "tools", json_object_new_object());
         json_object_object_add(result, "capabilities", caps);
         json_object_object_add(result, "serverInfo", info);
@@ -91,7 +91,7 @@ static void handle(Json *request, Json *tools) {
 }
 int main(int argc, char **argv) {
     if (argc > 1) {
-        if (argc == 2 && !strcmp(argv[1], "--version")) { puts("newrelic-mcp-c 0.1.0"); return 0; }
+        if (argc == 2 && !strcmp(argv[1], "--version")) { puts("newrelic-mcp-c 0.1.1"); return 0; }
         fputs("Usage: newrelic-mcp-c [--version]\nMCP stdio server. Configure NEW_RELIC_API_KEY_FILE, NEW_RELIC_ACCOUNT_ID_FILE, NEW_RELIC_REGION_FILE and NEW_RELIC_READ_ONLY.\n", stderr);
         return argc == 2 && !strcmp(argv[1], "--help") ? 0 : 2;
     }

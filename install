@@ -22,7 +22,7 @@ main() {
     arm64) arch=aarch64 ;;
     *) fail "Unsupported architecture: $(uname -m)" ;;
   esac
-  version=${NEWRELIC_MCP_VERSION:-v0.1.0}
+  version=${NEWRELIC_MCP_VERSION:-v0.1.1}
   printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || fail 'Version must be vMAJOR.MINOR.PATCH.'
   if [ -n "${PREFIX:-}" ]; then prefix=$PREFIX
   elif [ "$(id -u)" = 0 ]; then prefix=/usr/local

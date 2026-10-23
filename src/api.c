@@ -167,7 +167,7 @@ Json *http_request(const char *method, const char *path, Json *query, Json *body
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "newrelic-mcp-c/0.1.0");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "newrelic-mcp-c/0.1.1");
 #ifndef NR_TEST
     /* Older libcurl rejects this option; do not send without the HTTPS-only restriction. */
     if (curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https") != CURLE_OK) {

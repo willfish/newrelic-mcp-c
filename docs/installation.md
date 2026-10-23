@@ -21,7 +21,7 @@ and `NEWRELIC_MCP_VERSION` to pin a release:
 
 ```sh
 curl -fsSL https://github.com/willfish/newrelic-mcp-c/releases/latest/download/install \
-  | PREFIX="$HOME/tools" NEWRELIC_MCP_VERSION=v0.1.0 sh
+  | PREFIX="$HOME/tools" NEWRELIC_MCP_VERSION=v0.1.1 sh
 ```
 
 To skip the installer, download `newrelic-mcp-c-<version>-darwin-<arch>.tar.gz`
