@@ -41,15 +41,29 @@ telemetry or credentials and never creates resources or acknowledges issues.
 
 ## Release packaging
 
-- `packaging/build-macos` builds on the native architecture: checksum-pinned
-  json-c source linked statically, Apple's libcurl and libSystem, a macOS 14
-  deployment target and an ad-hoc signature. It rejects any other dynamic library
-  and runs `make test` against the packaged build.
-- `.github/workflows/release.yml` runs that script on Intel and Apple Silicon
-  runners for a `v*` tag, then publishes both archives, `install` and
-  `SHA256SUMS`.
+Releases are built on an Apple Silicon Mac and published from a Linux machine with
+an authenticated `gh`. CI still builds and tests on GitHub's Intel and Apple
+Silicon runners, but tags do not publish anything automatically.
 
-For a release, keep the version in `src/main.c`, `src/api.c` (user agent),
-`default.nix` and the `install` default in sync. The build fails if the tag does
-not match the binary's `--version`. Push the tag, then check the public curl
-installation on a Mac.
+- `packaging/build-macos` builds one architecture (`ARCH=aarch64` or
+  `ARCH=x86_64`): checksum-pinned json-c source linked statically, Apple's libcurl
+  and libSystem, a macOS 14 deployment target and an ad-hoc signature. It rejects
+  any other dynamic library and runs `make test` against the packaged build; Intel
+  tests run under Rosetta on Apple Silicon.
+- `packaging/release-relay` copies the committed tree to the Mac over SSH
+  (`RELAY_HOST`, default `relay.fritz.box`), builds both architectures, publishes
+  both archives, `install` and `SHA256SUMS`, then installs each architecture from
+  the public release on the Mac. The Mac needs the Xcode command line tools,
+  Rosetta and either cmake or Nix.
+
+To release:
+
+1. Bump the version in `src/main.c`, `src/api.c` (user agent), `default.nix` and
+   the `install` default, then commit. The build fails if the tag does not match
+   the binary's `--version`.
+2. Check the build without publishing: `packaging/release-relay --dry-run`.
+3. Tag and push: `git tag -a vX.Y.Z -m vX.Y.Z && git push origin master vX.Y.Z`.
+4. Publish: `packaging/release-relay vX.Y.Z`.
+
+`packaging/release-relay --verify vX.Y.Z` repeats the install check for an existing
+release.

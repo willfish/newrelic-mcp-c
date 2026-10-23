@@ -1,11 +1,14 @@
 #!/bin/sh
-# Build a release archive on the native architecture. json-c is linked statically;
-# libcurl and libSystem come from macOS itself, so nothing else is installed.
+# Build a release archive. json-c is linked statically; libcurl and libSystem come
+# from macOS itself, so nothing else is installed. ARCH=x86_64 or ARCH=aarch64
+# selects the target (default: this machine). Apple Silicon runs the x86_64 tests
+# under Rosetta.
 set -eu
 [ "$(uname -s)" = Darwin ] || { echo 'Build this artifact on macOS.' >&2; exit 1; }
-case "$(uname -m)" in
-  arm64) arch=aarch64 ;;
-  x86_64) arch=x86_64 ;;
+arch=${ARCH:-$(uname -m)}
+case "$arch" in
+  arm64|aarch64) arch=aarch64 clang_arch=arm64 ;;
+  x86_64) clang_arch=x86_64 ;;
   *) echo 'Unsupported build architecture.' >&2; exit 1 ;;
 esac
 work=$(mktemp -d)
@@ -20,12 +23,13 @@ curl -fLsS --proto '=https' --proto-redir '=https' --tlsv1.2 \
 (cd "$work" && printf '%s\n' '876ab046479166b869afc6896d288183bbc0e5843f141200c677b3e8dfb11724  json-c.tar.gz' | shasum -a 256 -c -)
 tar --no-same-owner -xzf "$work/json-c.tar.gz" -C "$work"
 cmake -S "$work/$jsonc" -B "$work/json-c-build" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_OSX_ARCHITECTURES="$clang_arch" \
   -DCMAKE_INSTALL_PREFIX="$work/prefix" -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
   -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DBUILD_APPS=OFF -DBUILD_TESTING=OFF \
   -DDISABLE_EXTRA_LIBS=ON >/dev/null
 cmake --build "$work/json-c-build" --target install >/dev/null
 
-set -- CC=cc CFLAGS='-Os' DEPS_CFLAGS="-I$work/prefix/include" \
+set -- CC="/usr/bin/cc -arch $clang_arch" CFLAGS='-Os' DEPS_CFLAGS="-I$work/prefix/include" \
   DEPS_LIBS="$work/prefix/lib/libjson-c.a -lcurl"
 make clean
 make newrelic-mcp-c "$@"
@@ -35,6 +39,7 @@ VERSION=${VERSION:-$source_version}
 [ "$VERSION" = "$source_version" ] || { echo "Tag $VERSION does not match source $source_version." >&2; exit 1; }
 printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
 
+[ "$(lipo -archs newrelic-mcp-c)" = "$clang_arch" ] || { echo 'Wrong binary architecture.' >&2; exit 1; }
 otool -L newrelic-mcp-c > "$work/libraries"
 cat "$work/libraries"
 # Reject accidental Homebrew, Nix or developer-machine library dependencies.

@@ -1,0 +1,93 @@
+#!/bin/sh
+# Build both macOS archives on a Mac over SSH, then publish them from this machine.
+#
+#   packaging/release-relay --dry-run      build and test HEAD; publish nothing
+#   packaging/release-relay vX.Y.Z         publish the pushed tag at HEAD
+#   packaging/release-relay --verify vX.Y.Z  curl-install a release on the Mac
+#
+# RELAY_HOST selects the Mac (default relay.fritz.box). It needs the Xcode
+# command line tools, Rosetta for the Intel tests, and cmake or Nix.
+set -eu
+host=${RELAY_HOST:-relay.fritz.box}
+repo=willfish/newrelic-mcp-c
+fail() { printf 'release-relay: %s\n' "$*" >&2; exit 1; }
+
+verify() {
+  # Install each architecture from the public release into a scratch prefix.
+  ssh "$host" sh -s -- "$1" "$repo" <<'EOF'
+set -eu
+version=$1 repo=$2
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+for arch in arm64 x86_64; do
+  curl -fsSL "https://github.com/$repo/releases/download/$version/install" \
+    | PREFIX="$tmp/$arch" arch "-$arch" /bin/sh
+  bin="$tmp/$arch/bin/newrelic-mcp-c"
+  [ "$(lipo -archs "$bin")" = "$arch" ]
+  [ "$("$bin" --version)" = "newrelic-mcp-c ${version#v}" ]
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$bin" | grep -q run_nrql_query
+  printf 'Verified %s %s\n' "$version" "$arch"
+done
+EOF
+}
+
+case "${1:-}" in
+  --dry-run) [ $# = 1 ] || fail 'Usage: --dry-run'; version='' ;;
+  --verify) [ $# = 2 ] || fail 'Usage: --verify vX.Y.Z'; verify "$2"; exit 0 ;;
+  v*) [ $# = 1 ] || fail 'Usage: vX.Y.Z'; version=$1 ;;
+  *) fail 'Usage: --dry-run | vX.Y.Z | --verify vX.Y.Z' ;;
+esac
+
+cd "$(git rev-parse --show-toplevel)"
+[ -z "$(git status --porcelain)" ] || fail 'Commit or stash changes first; only committed files are built.'
+head=$(git rev-parse HEAD)
+if [ -n "$version" ]; then
+  printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || fail 'Version must be vMAJOR.MINOR.PATCH.'
+  [ "$(git rev-parse "$version^{commit}")" = "$head" ] || fail "Tag $version is not HEAD."
+  remote_tag=$(git ls-remote origin "refs/tags/$version^{}" "refs/tags/$version" | awk 'NR == 1 || /\^\{\}$/ {c = $1} END {print c}')
+  [ "$remote_tag" = "$head" ] || fail "Push tag $version to origin first."
+  grep -qF "version=\${NEWRELIC_MCP_VERSION:-$version}" install || fail "Set the install default to $version."
+  gh release view "$version" --repo "$repo" >/dev/null 2>&1 && fail "Release $version already exists."
+fi
+
+out=$(mktemp -d)
+remote=$(ssh "$host" mktemp -d)
+case "$remote" in /*/tmp.*) ;; *) fail "Unexpected remote directory: $remote" ;; esac
+trap 'cd /; rm -rf "$out"; ssh "$host" rm -rf "$remote"' EXIT
+trap 'exit 1' HUP INT TERM
+
+git archive --format=tar HEAD | ssh "$host" tar -xf - -C "$remote"
+# The Mac's login shell may not be POSIX, so run the build script through sh.
+# ssh drops empty arguments, so "-" stands for "use the source version".
+ssh "$host" sh -s -- "$remote" "${version:--}" <<'EOF'
+set -eu
+cd "$1"
+version=$2
+[ "$version" != - ] || version=''
+export PATH="$PATH:/nix/var/nix/profiles/default/bin"
+if command -v cmake >/dev/null 2>&1; then set --
+else set -- nix shell nixpkgs#cmake -c
+fi
+for arch in aarch64 x86_64; do
+  ARCH=$arch VERSION=$version "$@" sh packaging/build-macos
+done
+EOF
+ssh "$host" env COPYFILE_DISABLE=1 tar -cf - -C "$remote/dist" . | tar -xf - -C "$out"
+
+cp install "$out/install"
+cd "$out"
+set -- newrelic-mcp-c-v*-darwin-aarch64.tar.gz newrelic-mcp-c-v*-darwin-x86_64.tar.gz
+[ -f "$1" ] && [ -f "$2" ] || fail 'Expected one archive per architecture.'
+sha256sum -- "$@" install > SHA256SUMS
+cat SHA256SUMS
+
+if [ -z "$version" ]; then
+  echo 'Dry run complete; nothing published.'
+  exit 0
+fi
+gh release create "$version" --repo "$repo" --verify-tag --draft --title "$version" \
+  --notes 'macOS 14+ binaries for Intel and Apple Silicon. Ad-hoc signed, not notarised. See the README for installation.' \
+  "$@" install SHA256SUMS
+gh release edit "$version" --repo "$repo" --draft=false --latest
+cd /
+verify "$version"
