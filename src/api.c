@@ -169,7 +169,10 @@ Json *http_request(const char *method, const char *path, Json *query, Json *body
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "newrelic-mcp-c/0.1.0");
 #ifndef NR_TEST
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+    /* Older libcurl rejects this option; do not send without the HTTPS-only restriction. */
+    if (curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https") != CURLE_OK) {
+        fail("libcurl 7.85 or newer is required"); goto done;
+    }
 #endif
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, receive);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);

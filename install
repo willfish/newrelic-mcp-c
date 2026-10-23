@@ -1,0 +1,69 @@
+#!/bin/sh
+# Download this script for inspection, or pipe it to sh. No sudo or shell edits.
+set -eu
+
+fail() { printf 'newrelic-mcp-c: %s\n' "$*" >&2; exit 1; }
+fetch() { curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 "$1" -o "$2"; }
+
+main() {
+  case "${1:-}" in
+    '') ;;
+    --help) printf 'Usage: curl -fsSL <release>/install | sh\nOverrides: PREFIX, NEWRELIC_MCP_VERSION\nSupported: macOS 14+, Intel and Apple Silicon\n'; exit 0 ;;
+    *) fail 'Use PREFIX and NEWRELIC_MCP_VERSION environment variables, or --help.' ;;
+  esac
+  for tool in curl tar uname id mktemp mkdir cp mv chmod rm awk grep shasum sw_vers; do
+    command -v "$tool" >/dev/null 2>&1 || fail "Required command missing: $tool"
+  done
+  [ "$(uname -s)" = Darwin ] || fail 'Prebuilt releases support macOS only. On Linux, use Nix or build from source.'
+  major=$(sw_vers -productVersion | awk -F. '{print $1}')
+  [ "$major" -ge 14 ] || fail 'macOS 14 or newer is required.'
+  case "$(uname -m)" in
+    x86_64) arch=x86_64 ;;
+    arm64) arch=aarch64 ;;
+    *) fail "Unsupported architecture: $(uname -m)" ;;
+  esac
+  version=${NEWRELIC_MCP_VERSION:-v0.1.0}
+  printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || fail 'Version must be vMAJOR.MINOR.PATCH.'
+  if [ -n "${PREFIX:-}" ]; then prefix=$PREFIX
+  elif [ "$(id -u)" = 0 ]; then prefix=/usr/local
+  else prefix=${HOME:?HOME must be set}/.local
+  fi
+  case "$prefix" in /*) ;; *) fail 'PREFIX must be an absolute path.' ;; esac
+  [ ! -d "$prefix/bin/newrelic-mcp-c" ] || fail 'The destination is a directory.'
+  umask 022
+  tmp=$(mktemp -d)
+  staged=''
+  trap 'rm -rf "$tmp"; if [ -n "$staged" ]; then rm -f "$staged"; fi' EXIT
+  trap 'exit 1' HUP INT TERM
+  archive="newrelic-mcp-c-$version-darwin-$arch.tar.gz"
+  release="https://github.com/willfish/newrelic-mcp-c/releases/download/$version"
+  printf 'Downloading %s for macOS %s...\n' "$version" "$arch"
+  fetch "$release/$archive" "$tmp/$archive"
+  fetch "$release/SHA256SUMS" "$tmp/SHA256SUMS"
+  expected=$(awk -v name="$archive" '$2 == name {print $1}' "$tmp/SHA256SUMS")
+  [ "${#expected}" = 64 ] || fail 'Missing or duplicate archive checksum.'
+  case "$expected" in *[!0-9a-f]*) fail 'Invalid archive checksum.' ;; esac
+  (cd "$tmp" && printf '%s  %s\n' "$expected" "$archive" | shasum -a 256 -c -) || fail 'Checksum verification failed.'
+  mkdir "$tmp/package"
+  tar --no-same-owner -xzf "$tmp/$archive" -C "$tmp/package"
+  [ -x "$tmp/package/newrelic-mcp-c" ] || fail 'Incomplete archive.'
+  # Tool discovery needs no credentials, so this checks the binary without network access.
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    | env -i "$tmp/package/newrelic-mcp-c" > "$tmp/probe.json" || fail 'Executable check failed.'
+  grep -q '"name":"newrelic-mcp-c"' "$tmp/probe.json" || fail 'Executable check failed.'
+
+  mkdir -p "$prefix/bin" "$prefix/share/doc/newrelic-mcp-c"
+  cp "$tmp/package/licenses/"* "$tmp/package/BUILD-DEPENDENCIES.txt" "$prefix/share/doc/newrelic-mcp-c/"
+  # Stage beside the destination so the final rename is atomic. A running server
+  # keeps its original file.
+  staged=$(mktemp "$prefix/bin/.newrelic-mcp-c.XXXXXX")
+  cp "$tmp/package/newrelic-mcp-c" "$staged"
+  chmod 755 "$staged"
+  trap '' HUP INT TERM
+  mv -f "$staged" "$prefix/bin/newrelic-mcp-c"
+  staged=''
+  printf '\nInstalled: %s/bin/newrelic-mcp-c\n' "$prefix"
+  printf 'Use that absolute path in your MCP client, or add %s/bin to PATH.\n' "$prefix"
+}
+
+main "$@"

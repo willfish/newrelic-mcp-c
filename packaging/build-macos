@@ -1,0 +1,54 @@
+#!/bin/sh
+# Build a release archive on the native architecture. json-c is linked statically;
+# libcurl and libSystem come from macOS itself, so nothing else is installed.
+set -eu
+[ "$(uname -s)" = Darwin ] || { echo 'Build this artifact on macOS.' >&2; exit 1; }
+case "$(uname -m)" in
+  arm64) arch=aarch64 ;;
+  x86_64) arch=x86_64 ;;
+  *) echo 'Unsupported build architecture.' >&2; exit 1 ;;
+esac
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+trap 'exit 1' HUP INT TERM
+
+# CURLOPT_PROTOCOLS_STR needs libcurl 7.85+. macOS 14 and newer ship libcurl 8.
+export MACOSX_DEPLOYMENT_TARGET=14.0
+jsonc=json-c-0.18
+curl -fLsS --proto '=https' --proto-redir '=https' --tlsv1.2 \
+  "https://s3.amazonaws.com/json-c_releases/releases/$jsonc.tar.gz" -o "$work/json-c.tar.gz"
+(cd "$work" && printf '%s\n' '876ab046479166b869afc6896d288183bbc0e5843f141200c677b3e8dfb11724  json-c.tar.gz' | shasum -a 256 -c -)
+tar --no-same-owner -xzf "$work/json-c.tar.gz" -C "$work"
+cmake -S "$work/$jsonc" -B "$work/json-c-build" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$work/prefix" -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+  -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DBUILD_APPS=OFF -DBUILD_TESTING=OFF \
+  -DDISABLE_EXTRA_LIBS=ON >/dev/null
+cmake --build "$work/json-c-build" --target install >/dev/null
+
+set -- CC=cc CFLAGS='-Os' DEPS_CFLAGS="-I$work/prefix/include" \
+  DEPS_LIBS="$work/prefix/lib/libjson-c.a -lcurl"
+make clean
+make newrelic-mcp-c "$@"
+
+source_version=v$(./newrelic-mcp-c --version | awk '{print $2}')
+VERSION=${VERSION:-$source_version}
+[ "$VERSION" = "$source_version" ] || { echo "Tag $VERSION does not match source $source_version." >&2; exit 1; }
+printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+
+otool -L newrelic-mcp-c > "$work/libraries"
+cat "$work/libraries"
+# Reject accidental Homebrew, Nix or developer-machine library dependencies.
+awk 'NR > 1 && $1 != "/usr/lib/libSystem.B.dylib" && $1 != "/usr/lib/libcurl.4.dylib" {bad=1}
+  END {exit (bad || NR < 2)}' "$work/libraries"
+codesign --force --sign - newrelic-mcp-c
+codesign --verify --strict newrelic-mcp-c
+make test "$@"
+
+mkdir -p "$work/package/licenses" dist
+cp newrelic-mcp-c "$work/package/"
+cp LICENSE "$work/package/licenses/newrelic-mcp-c.txt"
+cp "$work/$jsonc/COPYING" "$work/package/licenses/json-c.txt"
+printf '%s (static)\nlibcurl from macOS\nmacOS deployment target %s\n' \
+  "$jsonc" "$MACOSX_DEPLOYMENT_TARGET" > "$work/package/BUILD-DEPENDENCIES.txt"
+COPYFILE_DISABLE=1 tar -czf "dist/newrelic-mcp-c-$VERSION-darwin-$arch.tar.gz" -C "$work/package" .
+ls -l dist
