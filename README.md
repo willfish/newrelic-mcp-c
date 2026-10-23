@@ -1,66 +1,86 @@
+<div align="center">
+
 # newrelic-mcp-c
 
-Native C stdio MCP server for New Relic, using libcurl and json-c. No Node.js,
-Python or package downloads at runtime. Python is used only to embed the tool
-catalog at build time and for optional checks.
+**New Relic for your AI assistant, without a JavaScript runtime.**
 
-Implements the 20 capabilities advertised by
-[cloudbring/newrelic-mcp](https://github.com/cloudbring/newrelic-mcp), including its
-two unregistered REST alert tools. Uses the current NerdGraph schema rather than
-reproducing broken upstream queries. Inspired by upstream revision
-`dc6e4261f9af614a5ad1539469870780a84a9779`; MIT attribution is retained in `LICENSE`.
+A New Relic MCP server written in C. One small binary that starts in
+milliseconds, so your assistant can query NRQL, inspect entities and check
+alerts without installing Node.js or pulling hundreds of npm packages.
 
-## Build and run
+[![Release](https://img.shields.io/github/v/release/willfish/newrelic-mcp-c?style=flat-square)](https://github.com/willfish/newrelic-mcp-c/releases/latest)
+[![C](https://img.shields.io/badge/written_in-C-555?style=flat-square)](docs/development.md)
+[![Platforms](https://img.shields.io/badge/macOS-Intel_%7C_Apple_Silicon-5277c3?style=flat-square)](#quick-start)
+[![MCP](https://img.shields.io/badge/MCP-stdio-0f766e?style=flat-square)](#connect-your-client)
+
+[Get started](#quick-start) · [Why C?](#why-c) · [Documentation](#documentation)
+
+</div>
+
+## Why C?
+
+An MCP server is a thin translation layer: read JSON-RPC from stdin, call an HTTPS
+API, write JSON back. MCP clients launch one per session, often alongside several
+others, and keep them running in the background. A layer that thin should not
+need a language runtime and a dependency tree larger than the job it does.
+
+The [Node.js server](https://github.com/cloudbring/newrelic-mcp) offers
+the same capabilities. Measured side by side on the same Linux x86_64 machine,
+listing tools without credentials:
+
+| | newrelic-mcp-c | newrelic-mcp 2.1.0 on Node.js 22 |
+| --- | --- | --- |
+| **What you install** | One binary, a 36 KB download | Node.js plus 385 npm packages (208 MB of `node_modules`) |
+| **Start to first tool list** | ~4 ms | ~100 ms |
+| **Peak memory** | ~14 MiB | ~74 MiB |
+| **Runtime dependencies** | libcurl and json-c | Node.js 20+ and the npm tree |
+| **Nix closure** | 63 MiB, mostly glibc and OpenSSL shared with the rest of the system | 247 MiB for Node.js alone, before any packages |
+
+What that buys you:
+
+- **Nothing to manage on a Mac.** The release binary links only to libraries that
+  ship with macOS. No Homebrew, no `nvm`, no runtime version to keep compatible.
+- **Fewer things to trust.** Two widely deployed C libraries instead of a
+  transitive npm tree, and no `npx` step resolving packages when your client
+  starts.
+- **Instant, cheap startup.** Clients that spawn servers per session or per
+  window do not wait for a JavaScript runtime to boot, and idle servers stay small.
+- **Safer defaults for an API key with write access.** A read-only mode the
+  model cannot switch off, secrets read from files, fixed HTTPS endpoints with no
+  redirects and no automatic retries of writes.
+
+The trade-off is that C needs more care than TypeScript. The server is about 800
+lines, compiled with strict warnings, and every tool is exercised against a local
+New Relic fixture before each release.
+
+## Quick start
+
+On macOS 14 or newer, Intel or Apple Silicon:
 
 ```sh
-nix build
-export NEW_RELIC_API_KEY_FILE="$HOME/.config/sops-nix/secrets/NEW_RELIC_API_KEY"
-export NEW_RELIC_ACCOUNT_ID_FILE="$HOME/.config/sops-nix/secrets/NEW_RELIC_ACCOUNT_ID"
-export NEW_RELIC_REGION_FILE="$HOME/.config/sops-nix/secrets/NEW_RELIC_REGION"
-export NEW_RELIC_READ_ONLY=1
-./result/bin/newrelic-mcp-c
+curl -fsSL https://github.com/willfish/newrelic-mcp-c/releases/latest/download/install | sh
 ```
 
-The process reads one JSON-RPC message per line from stdin and writes responses
-only to stdout. It supports tool discovery without credentials, initialization,
-ping and MCP tools/list and tools/call. Negotiates MCP 2024-11-05, 2025-03-26,
-2025-06-18 or 2025-11-25. It does not advertise resources or prompts.
+This installs `~/.local/bin/newrelic-mcp-c` after checking its checksum. No sudo
+or Homebrew needed. You can also download the binary for your architecture
+directly from the [latest release](https://github.com/willfish/newrelic-mcp-c/releases/latest).
 
-Without Nix, install a C11 compiler, make, pkg-config, Python 3, libcurl development
-headers and json-c development headers, then run `make` and `make install`.
-`PREFIX` and `DESTDIR` are supported.
+On Linux, use [Nix](docs/installation.md#nix) or
+[build from source](docs/development.md#build-from-source).
 
-## Configuration
+### Connect your client
 
-| Variable | Purpose |
-| --- | --- |
-| `NEW_RELIC_API_KEY` | New Relic **User API key**, required for API calls |
-| `NEW_RELIC_ACCOUNT_ID` | Default numeric account ID for account-scoped tools |
-| `NEW_RELIC_REGION` | `US` (default) or `EU`; applies to both NerdGraph and REST |
-| `NEW_RELIC_READ_ONLY` | Set to `1` to enforce read-only operation |
-
-The first three also accept a `_FILE` suffix. A configured file takes precedence
-over the corresponding environment value; trailing newlines are removed. Keep
-secret contents out of Nix expressions, the Nix store and version control.
-
-**Writes are allowed by default.** Read-only mode is enabled when
-`NEW_RELIC_READ_ONLY` is set to anything except `0` or `false` (case-insensitive).
-It blocks all four named write tools and raw GraphQL containing mutation or
-subscription keywords outside strings/comments. The raw-query guard is
-conservative and can also reject those keywords used as field or operation names.
-Only the process environment controls this setting, not tool arguments.
-
-An MCP client can register a command with a configuration such as:
+Create a New Relic **User API key**, then add the server to your client's MCP
+configuration using absolute paths:
 
 ```json
 {
   "mcpServers": {
     "newrelic": {
-      "command": "/absolute/path/to/newrelic-mcp-c",
+      "command": "/Users/you/.local/bin/newrelic-mcp-c",
       "env": {
-        "NEW_RELIC_API_KEY_FILE": "/run/user/1000/secrets/NEW_RELIC_API_KEY",
+        "NEW_RELIC_API_KEY_FILE": "/Users/you/.config/newrelic/api-key",
         "NEW_RELIC_ACCOUNT_ID": "1234567",
-        "NEW_RELIC_REGION": "EU",
         "NEW_RELIC_READ_ONLY": "1"
       }
     }
@@ -68,74 +88,30 @@ An MCP client can register a command with a configuration such as:
 }
 ```
 
-Use the actual secret paths on your machine. Pi also accepts a wrapper command
-that exports these file paths before executing the binary.
+Writes are allowed unless `NEW_RELIC_READ_ONLY` is set. EU accounts also need
+`NEW_RELIC_REGION=EU`. See [configuration](docs/configuration.md) for every option.
 
-## Capabilities
+## What it does
 
-- **Queries:** `run_nrql_query`, `run_nerdgraph_query`, `get_account_details`.
-- **Entities and APM:** `list_apm_applications`, `search_entities`,
-  `get_entity_details`, `list_apm_applications_rest`, `list_application_hosts`.
-- **Alerts:** `list_alert_policies`, `list_open_incidents`,
-  `list_alert_policies_rest`, `list_open_incidents_rest`, `acknowledge_incident`.
-- **Synthetics:** `list_synthetics_monitors`, `create_browser_monitor`.
-- **Deployments:** `list_deployments_rest`, `create_deployment`,
-  `delete_deployment`.
-- **Host metrics:** `list_metric_names_for_host`, `get_metric_data_for_host`.
+Twenty tools covering NRQL and NerdGraph queries, APM applications and hosts,
+entity search and details, alert policies and incidents, synthetic monitors,
+deployment markers and host metrics.
 
-`tools/list` supplies the exact argument schemas. Account-scoped NerdGraph tools
-accept `target_account_id`; REST tools accept an optional `region` override.
-Read-only annotations are hints, not authorization. Monitor creation schedules
-checks and can incur usage. Obtain authorization before any write, including raw
-NerdGraph mutations. Deployment deletion additionally requires `confirm: true`.
+Try asking your assistant:
 
-### Pagination and response contracts
+> What is the error rate for checkout-api over the last hour?
+>
+> Which alerts are open right now, and on which entities?
+>
+> Record a deployment marker for revision 4f2a1c on billing-service.
 
-Tool results contain JSON encoded as MCP text content. API failures set
-`isError: true`; invalid arguments produce JSON-RPC invalid-params errors. GraphQL
-partial-data responses containing errors are failures, not empty successes.
+[See every tool and its response format →](docs/tools.md)
 
-- Entity search returns `{entities, nextCursor}` and accepts `cursor`.
-- NerdGraph APM, policy, issue and monitor lists follow cursors and return arrays.
-- REST reads return `{items, page}`. Normally `items` is one API page object;
-  with `auto_paginate: true` it is an array of API page objects. `page` is the last
-  fetched page. All REST reads support a starting `page`.
-- REST writes return `{status, data}`, including successful empty DELETE bodies.
-- Raw NerdGraph returns the full `{data: ...}` envelope. Other NerdGraph tools
-  extract their relevant payload. NRQL includes metadata and a `timeSeries` hint.
+## Documentation
 
-These are capability-compatible, not byte-for-byte copies of upstream responses.
-Open incidents use current **issues** IDs and acknowledgement requires an account
-ID. Entity details include recent violations, APM settings, related entities with
-a continuation cursor, and golden metric **definitions**, not fabricated values.
-REST incident filtering operates on the nested incidents array in each page;
-use `only_open: true` to exclude closed incidents.
+[Installation](docs/installation.md) · [Configuration](docs/configuration.md) ·
+[Tool reference](docs/tools.md) · [Development](docs/development.md)
 
-The client uses fixed New Relic HTTPS endpoints, verifies TLS, refuses redirects,
-limits each response to 16 MiB and pagination to 100 pages. Connection/request
-timeouts are 10/60 seconds. Link headers contribute page numbers only, never a
-new host or path. Requests are not retried automatically. A timed-out write can
-have succeeded remotely; inspect state before deciding whether to retry.
-
-## Checks
-
-```sh
-direnv allow
-direnv exec . make test
-```
-
-This exercises all 20 capabilities against a local HTTP fixture with a fake key,
-including mutation request bodies, pagination, filters and the read-only guard.
-Only the separate test binary accepts a loopback fixture endpoint; production
-builds have no endpoint override.
-
-For opt-in **live reads only**, configure credentials as above and run:
-
-```sh
-python3 tests/live_reads.py ./result/bin/newrelic-mcp-c
-```
-
-The script forces read-only mode and checks all 16 read capabilities. It needs
-an accessible APM application, a host and at least one host metric. An empty
-account cannot establish full coverage. It prints capability names rather than
-telemetry or credentials and never creates resources or acknowledges issues.
+Tool coverage is derived from
+[cloudbring/newrelic-mcp](https://github.com/cloudbring/newrelic-mcp); its MIT
+attribution is retained in [LICENSE](LICENSE).
