@@ -1,0 +1,122 @@
+[
+  {
+    "name":"run_nrql_query",
+    "description":"Execute a read-only NRQL query and return results and time-window metadata.",
+    "inputSchema":{"type":"object","properties":{"nrql":{"type":"string","minLength":1},"target_account_id":{"type":"string","minLength":1}},"required":["nrql"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"run_nerdgraph_query",
+    "description":"Execute raw NerdGraph GraphQL with optional variables. Mutations require write mode and explicit user authorization. Read-only mode rejects mutation operations.",
+    "inputSchema":{"type":"object","properties":{"query":{"type":"string","minLength":1},"variables":{"type":"object"}},"required":["query"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":true}
+  },
+  {
+    "name":"get_account_details",
+    "description":"Get account ID and name. Account-scoped tools use target_account_id or the configured default account.",
+    "inputSchema":{"type":"object","properties":{"target_account_id":{"type":"string","minLength":1}},"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_apm_applications",
+    "description":"List all APM applications, including language, reporting status, alert severity and tags. Follows NerdGraph cursors.",
+    "inputSchema":{"type":"object","properties":{"target_account_id":{"type":"string","minLength":1}},"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"search_entities",
+    "description":"Search entities by New Relic entity-search expression, scoped to the selected account. Returns entities and nextCursor; pass cursor to continue.",
+    "inputSchema":{"type":"object","properties":{"query":{"type":"string","minLength":1},"entity_types":{"type":"array","items":{"type":"string","minLength":1}},"target_account_id":{"type":"string","minLength":1},"cursor":{"type":"string","minLength":1}},"required":["query"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"get_entity_details",
+    "description":"Get entity metadata, APM settings, recent alert violations, related entities and golden metric definitions.",
+    "inputSchema":{"type":"object","properties":{"entity_guid":{"type":"string","minLength":1}},"required":["entity_guid"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_alert_policies",
+    "description":"List alert policies through NerdGraph, following pagination cursors.",
+    "inputSchema":{"type":"object","properties":{"target_account_id":{"type":"string","minLength":1}},"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_open_incidents",
+    "description":"List non-closed New Relic issues through NerdGraph, optionally filtered by priority. Follows pagination cursors.",
+    "inputSchema":{"type":"object","properties":{"target_account_id":{"type":"string","minLength":1},"priority":{"type":"string","enum":["CRITICAL","HIGH","MEDIUM","LOW"]}},"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"acknowledge_incident",
+    "description":"Acknowledge an issue by its incident_id using aiIssuesAckIssue. Requires a selected account, write mode and explicit authorization. Changes operational alert state.",
+    "inputSchema":{"type":"object","properties":{"incident_id":{"type":"string","minLength":1},"target_account_id":{"type":"string","minLength":1}},"required":["incident_id"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_synthetics_monitors",
+    "description":"List Synthetics monitors and their settings through NerdGraph, following pagination cursors.",
+    "inputSchema":{"type":"object","properties":{"target_account_id":{"type":"string","minLength":1},"monitor_type":{"type":"string","enum":["SIMPLE","BROWSER","SCRIPT_API","SCRIPT_BROWSER"]}},"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"create_browser_monitor",
+    "description":"Create an enabled simple browser Synthetics monitor. Requires write mode and explicit authorization; scheduled checks can incur usage.",
+    "inputSchema":{"type":"object","properties":{"name":{"type":"string","minLength":1},"url":{"type":"string","minLength":1},"frequency":{"type":"integer","enum":[1,5,10,15,30,60]},"locations":{"type":"array","items":{"type":"string","minLength":1},"minItems":1},"target_account_id":{"type":"string","minLength":1}},"required":["name","url","frequency","locations"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":false,"destructiveHint":false,"idempotentHint":false,"openWorldHint":true}
+  },
+  {
+    "name":"create_deployment",
+    "description":"Create an APM deployment marker through REST v2. Requires write mode and explicit authorization. Region defaults to NEW_RELIC_REGION.",
+    "inputSchema":{"type":"object","properties":{"application_id":{"type":"integer","minimum":1},"revision":{"type":"string","minLength":1},"changelog":{"type":"string"},"description":{"type":"string"},"user":{"type":"string"},"region":{"type":"string","enum":["US","EU"]}},"required":["application_id","revision"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":false,"destructiveHint":false,"idempotentHint":false,"openWorldHint":true}
+  },
+  {
+    "name":"delete_deployment",
+    "description":"Delete a deployment marker through REST v2. Requires confirm=true, write mode, admin permissions and explicit authorization.",
+    "inputSchema":{"type":"object","properties":{"application_id":{"type":"integer","minimum":1},"id":{"type":"integer","minimum":1},"confirm":{"type":"boolean","enum":[true]},"region":{"type":"string","enum":["US","EU"]}},"required":["application_id","id","confirm"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_deployments_rest",
+    "description":"List APM deployment markers. auto_paginate returns an array of page objects; otherwise items is one page. All REST tools inherit NEW_RELIC_REGION unless overridden.",
+    "inputSchema":{"type":"object","properties":{"application_id":{"type":"integer","minimum":1},"page":{"type":"integer","minimum":1,"maximum":1000000},"auto_paginate":{"type":"boolean"},"region":{"type":"string","enum":["US","EU"]}},"required":["application_id"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_apm_applications_rest",
+    "description":"List APM applications through REST v2 with name, host, ID and language filters. Supports page and auto_paginate.",
+    "inputSchema":{"type":"object","properties":{"filter_name":{"type":"string"},"filter_host":{"type":"string"},"filter_ids":{"type":"array","items":{"type":"integer","minimum":1}},"filter_language":{"type":"string"},"page":{"type":"integer","minimum":1,"maximum":1000000},"auto_paginate":{"type":"boolean"},"region":{"type":"string","enum":["US","EU"]}},"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_application_hosts",
+    "description":"List hosts for an APM application, with optional hostname or comma-separated ID filters. Supports page and auto_paginate.",
+    "inputSchema":{"type":"object","properties":{"application_id":{"type":"integer","minimum":1},"filter_hostname":{"type":"string"},"filter_ids":{"type":"string"},"page":{"type":"integer","minimum":1,"maximum":1000000},"auto_paginate":{"type":"boolean"},"region":{"type":"string","enum":["US","EU"]}},"required":["application_id"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_metric_names_for_host",
+    "description":"List metric names and values for an APM host, optionally filtering by name. Supports page and auto_paginate.",
+    "inputSchema":{"type":"object","properties":{"application_id":{"type":"integer","minimum":1},"host_id":{"type":"integer","minimum":1},"name":{"type":"string"},"page":{"type":"integer","minimum":1,"maximum":1000000},"auto_paginate":{"type":"boolean"},"region":{"type":"string","enum":["US","EU"]}},"required":["application_id","host_id"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"get_metric_data_for_host",
+    "description":"Get host metric timeslices using names[], values[], time bounds, period and summarize. Supports page and auto_paginate.",
+    "inputSchema":{"type":"object","properties":{"application_id":{"type":"integer","minimum":1},"host_id":{"type":"integer","minimum":1},"names":{"type":"array","items":{"type":"string","minLength":1},"minItems":1},"values":{"type":"array","items":{"type":"string","minLength":1}},"from":{"type":"string"},"to":{"type":"string"},"period":{"type":"integer","minimum":1},"summarize":{"type":"boolean"},"page":{"type":"integer","minimum":1,"maximum":1000000},"auto_paginate":{"type":"boolean"},"region":{"type":"string","enum":["US","EU"]}},"required":["application_id","host_id","names"],"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_alert_policies_rest",
+    "description":"List alert policies through REST v2, optionally filtering by name. Supports page and auto_paginate.",
+    "inputSchema":{"type":"object","properties":{"filter_name":{"type":"string"},"page":{"type":"integer","minimum":1,"maximum":1000000},"auto_paginate":{"type":"boolean"},"region":{"type":"string","enum":["US","EU"]}},"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  },
+  {
+    "name":"list_open_incidents_rest",
+    "description":"List REST v2 alert incidents, applying only_open and priority filters to each page's incidents array locally. Set only_open=true to exclude closed incidents. Supports auto_paginate.",
+    "inputSchema":{"type":"object","properties":{"only_open":{"type":"boolean"},"priority":{"type":"string","enum":["CRITICAL","HIGH","MEDIUM","LOW"]},"page":{"type":"integer","minimum":1,"maximum":1000000},"auto_paginate":{"type":"boolean"},"region":{"type":"string","enum":["US","EU"]}},"additionalProperties":false},
+    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":true}
+  }
+]
